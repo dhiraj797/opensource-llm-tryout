@@ -23,7 +23,7 @@ from policy_data import POLICY_CHUNKS
 # Configuration
 # ---------------------------------------------------------------------------
 USE_LLM = os.environ.get("USE_LLM", "false").lower() == "true"
-MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+MODEL_NAME = "meta-llama/Llama-3.2-1B"
 TOP_K_CHUNKS = 4  # Number of policy chunks to retrieve per query
 
 
@@ -161,14 +161,13 @@ def generate_answer_llm(pipe, query, context_chunks):
         f"[{c['title']}]\n{c['content']}" for c in context_chunks
     )
 
-    prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are a helpful RBIN Claims Assistant. Answer the employee's question using ONLY the policy information provided below. If the answer is not in the provided context, say "I don't have enough information in the policy to answer that." Be concise and cite the relevant policy section.
+    prompt = f"""The following is a conversation between an employee and an RBIN Claims Assistant. The assistant answers questions using ONLY the policy information provided below. If the answer is not in the provided context, the assistant says "I don't have enough information in the policy to answer that." The assistant is concise and cites the relevant policy section.
 
 Policy Context:
 {context_text}
-<|eot_id|><|start_header_id|>user<|end_header_id|>
-{query}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-"""
+
+Employee: {query}
+Assistant:"""
 
     result = pipe(prompt, return_full_text=False)
     return result[0]["generated_text"].strip()
