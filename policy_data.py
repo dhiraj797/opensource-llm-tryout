@@ -33,7 +33,7 @@ POLICY_CHUNKS = [
             "7) Credit Card Settlements (refer to GL/R/01 and GL/R/02), "
             "8) Petro/Fuel Card Settlements (refer to GL/P/39)."
         ),
-        "keywords": ["ntre", "inclusions", "entertainment", "vehicle", "maintenance", "conveyance", "marketing", "credit card", "fuel card"],
+        "keywords": ["ntre", "inclusions", "entertainment", "vehicle", "maintenance", "conveyance", "marketing", "credit card", "fuel card", "claim", "expenses", "covered", "eligible"],
     },
     {
         "title": "NTRE - Exclusions",
@@ -44,7 +44,7 @@ POLICY_CHUNKS = [
             "2) Unofficial/Personal Expenses, "
             "3) Payments already paid via salary."
         ),
-        "keywords": ["ntre", "exclusions", "not covered", "personal", "travel", "salary"],
+        "keywords": ["ntre", "exclusions", "not covered", "personal", "travel", "salary", "cannot claim", "not allowed", "unofficial"],
     },
     {
         "title": "NTRE - Approval Matrix",
@@ -109,7 +109,7 @@ POLICY_CHUNKS = [
             "Local conveyance expenses: Local travel, parking, tolls. "
             "Other miscellaneous expenses: Government payments, stamp papers, notary charges."
         ),
-        "keywords": ["ntre", "category", "entertainment", "maintenance", "marketing", "competitor", "samples", "parking", "tolls", "notary"],
+        "keywords": ["ntre", "category", "entertainment", "maintenance", "marketing", "competitor", "samples", "parking", "tolls", "notary", "food", "meals", "team", "birthday", "celebration", "cake", "lunch", "dinner", "party", "business entertainment"],
     },
     {
         "title": "NTRE - Prohibited Actions & Gift Policy",
@@ -120,7 +120,7 @@ POLICY_CHUNKS = [
             "Gifts for associates should be routed through SHABASH or Central Purchase. "
             "Gifts for third parties should follow RO-IN gratuity guidelines."
         ),
-        "keywords": ["ntre", "prohibited", "splitting", "gifts", "shabash", "gratuity"],
+        "keywords": ["ntre", "prohibited", "splitting", "gifts", "shabash", "gratuity", "birthday", "gift", "present", "reward"],
     },
 
     # =========================================================================
@@ -235,7 +235,7 @@ POLICY_CHUNKS = [
             "No mutual entertainment within RO-IN. "
             "Lump sum replaces daily allowance for entertainment days."
         ),
-        "keywords": ["entertainment", "bills", "mutual", "lump sum", "annexure"],
+        "keywords": ["entertainment", "bills", "mutual", "lump sum", "annexure", "food", "meals", "team", "lunch", "dinner", "guests"],
     },
     {
         "title": "Inland Travel - Conveyance Rules",

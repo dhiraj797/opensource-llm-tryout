@@ -33,6 +33,63 @@ TOP_K_CHUNKS = 4  # Number of policy chunks to retrieve per query
 class TFIDFRetriever:
     """Lightweight TF-IDF retriever using only Python builtins."""
 
+    # Map everyday words to policy terms so TF-IDF can bridge the gap
+    SYNONYM_MAP = {
+        # Food / entertainment related
+        "cake": ["entertainment", "ntre", "business"],
+        "birthday": ["entertainment", "ntre", "gifts", "shabash"],
+        "food": ["entertainment", "boarding", "meals", "allowance"],
+        "lunch": ["meals", "allowance", "boarding", "entertainment"],
+        "dinner": ["meals", "allowance", "boarding", "entertainment"],
+        "party": ["entertainment", "ntre", "business"],
+        "celebration": ["entertainment", "ntre", "business"],
+        "snacks": ["entertainment", "ntre", "meals"],
+        "treats": ["entertainment", "ntre", "gifts"],
+        "team": ["entertainment", "ntre", "business"],
+        "outing": ["entertainment", "ntre", "business"],
+        # Gift related
+        "gift": ["gratuity", "gifts", "shabash", "token", "promotional"],
+        "present": ["gratuity", "gifts", "shabash", "token"],
+        "reward": ["gratuity", "gifts", "shabash"],
+        # Travel related
+        "cab": ["taxi", "conveyance", "local"],
+        "uber": ["taxi", "conveyance", "local"],
+        "ola": ["taxi", "conveyance", "local"],
+        "bus": ["conveyance", "transport", "local"],
+        "train": ["conveyance", "transport", "travel"],
+        "flight": ["air", "travel", "booking"],
+        "fly": ["air", "travel", "flight", "booking"],
+        "hotel": ["accommodation", "lodging", "guesthouse"],
+        "stay": ["accommodation", "lodging", "hotel"],
+        "petrol": ["fuel", "fuel card", "petro"],
+        "diesel": ["fuel", "fuel card", "petro"],
+        "gas": ["fuel", "fuel card", "petro"],
+        # Money / claim related
+        "money": ["reimbursement", "claim", "expenses"],
+        "spent": ["reimbursement", "claim", "expenses"],
+        "pay": ["reimbursement", "claim", "settlement"],
+        "paid": ["reimbursement", "claim", "settlement"],
+        "bill": ["invoice", "receipts", "bills", "settlement"],
+        "receipt": ["invoice", "receipts", "bills"],
+        "reimburse": ["reimbursement", "claim", "ntre"],
+        "claim": ["reimbursement", "ntre", "claim", "expenses"],
+        # Role related
+        "boss": ["department head", "approving authority", "manager"],
+        "manager": ["department head", "approving authority", "sanctioning"],
+        "head": ["department head", "gl", "approving authority"],
+        # Misc
+        "phone": ["telephone", "mobile"],
+        "mobile": ["telephone", "mobile"],
+        "internet": ["wifi", "telephone"],
+        "laptop": ["office", "maintenance"],
+        "repair": ["maintenance", "spares"],
+        "abroad": ["international", "abroad", "foreign"],
+        "foreign": ["abroad", "international", "forex"],
+        "overseas": ["abroad", "international", "foreign"],
+        "dept": ["department"],
+        "department": ["department"],
+    }
+
     def __init__(self, documents):
         self.documents = documents
         self.vocab = set()
@@ -44,6 +101,15 @@ class TFIDFRetriever:
     def _tokenize(text):
         """Simple tokenizer: lowercase, split on non-alphanumeric."""
         return re.findall(r"[a-z0-9/]+", text.lower())
+
+    @classmethod
+    def _expand_query(cls, tokens):
+        """Expand query tokens with synonyms to improve recall."""
+        expanded = list(tokens)
+        for token in tokens:
+            if token in cls.SYNONYM_MAP:
+                expanded.extend(cls.SYNONYM_MAP[token])
+        return expanded
 
     def _build_index(self):
         """Build TF-IDF index over all document chunks."""
@@ -91,6 +157,7 @@ class TFIDFRetriever:
     def retrieve(self, query, top_k=TOP_K_CHUNKS):
         """Retrieve top-k most relevant chunks for a query."""
         query_tokens = self._tokenize(query)
+        query_tokens = self._expand_query(query_tokens)
         query_vec = self._tfidf_vector(query_tokens)
 
         scores = []
