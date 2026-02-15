@@ -131,8 +131,6 @@ def load_llm():
         from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
         import torch
 
-        st.toast("Loading Llama 3.2-1B model... This may take a minute.")
-
         tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
         model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
@@ -151,7 +149,6 @@ def load_llm():
         )
         return pipe
     except Exception as e:
-        st.error(f"Could not load LLM: {e}. Falling back to template mode.")
         return None
 
 
