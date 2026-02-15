@@ -2,7 +2,7 @@
 RBIN Claims Assist Chatbot - Streamlit PoC
 ============================================
 A RAG-based chatbot for RBIN expense claims policy Q&A.
-Uses TF-IDF retrieval + Llama 3.2-1B generation (with mock fallback).
+Uses ChromaDB semantic retrieval + Llama 3.2-1B generation (with template fallback).
 
 Usage:
     streamlit run claims_chatbot.py
@@ -24,18 +24,86 @@ from policy_data import POLICY_CHUNKS
 # ---------------------------------------------------------------------------
 USE_LLM = os.environ.get("USE_LLM", "false").lower() == "true"
 MODEL_NAME = "meta-llama/Llama-3.2-1B"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 TOP_K_CHUNKS = 4  # Number of policy chunks to retrieve per query
 
 
 # ---------------------------------------------------------------------------
-# TF-IDF Retrieval Engine (no external dependencies)
+# ChromaDB Semantic Retriever
+# ---------------------------------------------------------------------------
+@st.cache_resource
+def build_chroma_collection():
+    """Build a ChromaDB collection from policy chunks with semantic embeddings."""
+    import chromadb
+    from chromadb.utils import embedding_functions
+
+    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name=EMBEDDING_MODEL
+    )
+
+    client = chromadb.Client()
+    collection = client.get_or_create_collection(
+        name="policy_chunks",
+        embedding_function=ef,
+    )
+
+    # Only add documents if collection is empty
+    if collection.count() == 0:
+        docs = []
+        metadatas = []
+        ids = []
+        for i, chunk in enumerate(POLICY_CHUNKS):
+            # Combine title + content + keywords for richer embeddings
+            text = f"{chunk['title']}\n{chunk['content']}\nKeywords: {', '.join(chunk['keywords'])}"
+            docs.append(text)
+            metadatas.append({
+                "title": chunk["title"],
+                "section": chunk["section"],
+                "content": chunk["content"],
+            })
+            ids.append(f"chunk_{i}")
+
+        collection.add(documents=docs, metadatas=metadatas, ids=ids)
+
+    return collection
+
+
+class ChromaRetriever:
+    """Semantic retriever using ChromaDB + sentence-transformers."""
+
+    def __init__(self, collection):
+        self.collection = collection
+
+    def retrieve(self, query, top_k=TOP_K_CHUNKS):
+        """Retrieve top-k most relevant chunks using semantic search."""
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=top_k,
+        )
+
+        chunks = []
+        for i in range(len(results["ids"][0])):
+            meta = results["metadatas"][0][i]
+            distance = results["distances"][0][i]
+            # ChromaDB returns L2 distance; convert to a 0-1 similarity score
+            score = max(0, 1 - distance / 2)
+            chunks.append({
+                "score": round(score, 4),
+                "title": meta["title"],
+                "section": meta["section"],
+                "content": meta["content"],
+            })
+
+        return chunks
+
+
+# ---------------------------------------------------------------------------
+# TF-IDF Fallback Retriever (no external dependencies)
 # ---------------------------------------------------------------------------
 class TFIDFRetriever:
-    """Lightweight TF-IDF retriever using only Python builtins."""
+    """Lightweight TF-IDF retriever used as fallback if ChromaDB is unavailable."""
 
-    # Map everyday words to policy terms so TF-IDF can bridge the gap
     SYNONYM_MAP = {
-        # Food / entertainment related
         "cake": ["entertainment", "ntre", "business"],
         "birthday": ["entertainment", "ntre", "gifts", "shabash"],
         "food": ["entertainment", "boarding", "meals", "allowance"],
@@ -47,11 +115,9 @@ class TFIDFRetriever:
         "treats": ["entertainment", "ntre", "gifts"],
         "team": ["entertainment", "ntre", "business"],
         "outing": ["entertainment", "ntre", "business"],
-        # Gift related
         "gift": ["gratuity", "gifts", "shabash", "token", "promotional"],
         "present": ["gratuity", "gifts", "shabash", "token"],
         "reward": ["gratuity", "gifts", "shabash"],
-        # Travel related
         "cab": ["taxi", "conveyance", "local"],
         "uber": ["taxi", "conveyance", "local"],
         "ola": ["taxi", "conveyance", "local"],
@@ -64,7 +130,6 @@ class TFIDFRetriever:
         "petrol": ["fuel", "fuel card", "petro"],
         "diesel": ["fuel", "fuel card", "petro"],
         "gas": ["fuel", "fuel card", "petro"],
-        # Money / claim related
         "money": ["reimbursement", "claim", "expenses"],
         "spent": ["reimbursement", "claim", "expenses"],
         "pay": ["reimbursement", "claim", "settlement"],
@@ -73,11 +138,9 @@ class TFIDFRetriever:
         "receipt": ["invoice", "receipts", "bills"],
         "reimburse": ["reimbursement", "claim", "ntre"],
         "claim": ["reimbursement", "ntre", "claim", "expenses"],
-        # Role related
         "boss": ["department head", "approving authority", "manager"],
         "manager": ["department head", "approving authority", "sanctioning"],
         "head": ["department head", "gl", "approving authority"],
-        # Misc
         "phone": ["telephone", "mobile"],
         "mobile": ["telephone", "mobile"],
         "internet": ["wifi", "telephone"],
@@ -99,12 +162,10 @@ class TFIDFRetriever:
 
     @staticmethod
     def _tokenize(text):
-        """Simple tokenizer: lowercase, split on non-alphanumeric."""
         return re.findall(r"[a-z0-9/]+", text.lower())
 
     @classmethod
     def _expand_query(cls, tokens):
-        """Expand query tokens with synonyms to improve recall."""
         expanded = list(tokens)
         for token in tokens:
             if token in cls.SYNONYM_MAP:
@@ -112,17 +173,13 @@ class TFIDFRetriever:
         return expanded
 
     def _build_index(self):
-        """Build TF-IDF index over all document chunks."""
         n_docs = len(self.documents)
-
-        # Tokenize each document (combine title + content + keywords)
         for doc in self.documents:
             text = f"{doc['title']} {doc['content']} {' '.join(doc['keywords'])}"
             tokens = self._tokenize(text)
             self.doc_tokens.append(tokens)
             self.vocab.update(tokens)
 
-        # Compute IDF
         doc_freq = Counter()
         for tokens in self.doc_tokens:
             unique_tokens = set(tokens)
@@ -133,7 +190,6 @@ class TFIDFRetriever:
             self.idf[term] = math.log((n_docs + 1) / (df + 1)) + 1
 
     def _tfidf_vector(self, tokens):
-        """Compute TF-IDF vector for a list of tokens."""
         tf = Counter(tokens)
         total = len(tokens) if tokens else 1
         vector = {}
@@ -143,7 +199,6 @@ class TFIDFRetriever:
 
     @staticmethod
     def _cosine_similarity(vec_a, vec_b):
-        """Compute cosine similarity between two sparse vectors (dicts)."""
         common = set(vec_a.keys()) & set(vec_b.keys())
         if not common:
             return 0.0
@@ -155,7 +210,6 @@ class TFIDFRetriever:
         return dot / (norm_a * norm_b)
 
     def retrieve(self, query, top_k=TOP_K_CHUNKS):
-        """Retrieve top-k most relevant chunks for a query."""
         query_tokens = self._tokenize(query)
         query_tokens = self._expand_query(query_tokens)
         query_vec = self._tfidf_vector(query_tokens)
@@ -164,12 +218,9 @@ class TFIDFRetriever:
         for i, doc_tokens in enumerate(self.doc_tokens):
             doc_vec = self._tfidf_vector(doc_tokens)
             score = self._cosine_similarity(query_vec, doc_vec)
-
-            # Boost: extra weight if query tokens appear in keywords
             keyword_tokens = set(self._tokenize(" ".join(self.documents[i]["keywords"])))
             keyword_overlap = len(set(query_tokens) & keyword_tokens)
             score += keyword_overlap * 0.1
-
             scores.append((score, i))
 
         scores.sort(reverse=True)
@@ -183,6 +234,18 @@ class TFIDFRetriever:
                     "content": self.documents[idx]["content"],
                 })
         return results
+
+
+# ---------------------------------------------------------------------------
+# Retriever Initialization (ChromaDB with TF-IDF fallback)
+# ---------------------------------------------------------------------------
+def init_retriever():
+    """Initialize the best available retriever."""
+    try:
+        collection = build_chroma_collection()
+        return ChromaRetriever(collection), "ChromaDB Semantic"
+    except Exception:
+        return TFIDFRetriever(POLICY_CHUNKS), "TF-IDF Keyword"
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +369,12 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
+    # --- Initialize retriever ---
+    if "retriever" not in st.session_state:
+        retriever, retriever_mode = init_retriever()
+        st.session_state.retriever = retriever
+        st.session_state.retriever_mode = retriever_mode
+
     # --- Sidebar ---
     with st.sidebar:
         st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/Bosch-logo.svg/330px-Bosch-logo.svg.png", width=150)
@@ -329,16 +398,13 @@ def main():
         st.subheader("Settings")
         show_sources = st.toggle("Show retrieved sources", value=True)
         mode = "LLM (Llama 3.2-1B)" if USE_LLM else "Template (No GPU)"
-        st.info(f"Mode: **{mode}**")
+        st.info(f"Generation: **{mode}**")
+        st.info(f"Retrieval: **{st.session_state.get('retriever_mode', 'Loading...')}**")
         if not USE_LLM:
             st.caption("Set `USE_LLM=true` to use the Llama model for natural language answers.")
 
         st.divider()
         st.caption("PoC Demo v1.0 | RBIN Internal Use Only")
-
-    # --- Initialize retriever ---
-    if "retriever" not in st.session_state:
-        st.session_state.retriever = TFIDFRetriever(POLICY_CHUNKS)
 
     # --- Initialize LLM ---
     llm_pipe = None
